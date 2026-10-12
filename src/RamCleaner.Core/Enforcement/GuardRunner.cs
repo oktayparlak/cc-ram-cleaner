@@ -24,6 +24,7 @@ public sealed class GuardRunner : IDisposable
     private DateTime? _lastPurge;
     private int _memoryBusy;
     private bool _disposed;
+    private bool _started;
 
     public GuardRunner(Guard guard, IProcessControl processes, ActivityLog log, Func<UserConfig> config)
     {
@@ -40,7 +41,8 @@ public sealed class GuardRunner : IDisposable
     {
         lock (_gate)
         {
-            if (_disposed) return;
+            if (_disposed || _started) return;
+            _started = true;
             _processTimer.Change(ProcessInterval, ProcessInterval);
             _serviceTimer.Change(ServiceInterval, ServiceInterval);
             _memoryTimer.Change(MemoryInterval, MemoryInterval);
@@ -63,6 +65,7 @@ public sealed class GuardRunner : IDisposable
         lock (_gate)
         {
             if (_disposed) return;
+            _started = false;
             _processTimer.Change(Timeout.Infinite, Timeout.Infinite);
             _serviceTimer.Change(Timeout.Infinite, Timeout.Infinite);
             _memoryTimer.Change(Timeout.Infinite, Timeout.Infinite);
