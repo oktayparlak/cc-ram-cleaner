@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/RamCleaner.App/RamCleaner.App.csproj" />
     <Project Path="src/RamCleaner.Core/RamCleaner.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
