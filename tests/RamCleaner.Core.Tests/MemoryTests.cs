@@ -29,13 +29,39 @@ public class MemoryTests
         Assert.Equal(expected, StandbyPolicy.ShouldPurge(status, 10, last, now));
     }
 
+    private static ProcessInfo Proc(int pid, string name, int parent) => new(pid, name, 1, 0, parent, false, TimeSpan.Zero);
+
     [Fact]
-    public void ClaudeSessionCounter_CountsOnlyTopLevelClaudeProcesses()
+    public void AgentSessionCounter_CountsTopLevelSessionsPerAgent_AndOmitsAgentsNotRunning()
     {
-        ProcessInfo P(int pid, string name, int parent) => new(pid, name, 1, 0, parent, false, TimeSpan.Zero);
-        var snapshot = new[] { P(1, "bash", 0), P(2, "claude", 1), P(3, "claude", 2), P(4, "claude.exe", 1), P(5, "node", 4) };
-        Assert.Equal(2, ClaudeSessionCounter.Count(snapshot));
+        var snapshot = new[]
+        {
+            Proc(1, "bash", 0),
+            Proc(2, "claude", 1), Proc(3, "claude", 2),      // one session with a nested claude
+            Proc(4, "claude.exe", 1), Proc(5, "node", 4),    // second session
+            Proc(6, "opencode", 1), Proc(7, "opencode", 6),  // one OpenCode session
+        };
+
+        var counts = AgentSessionCounter.Count(snapshot);
+
+        Assert.Equal(new[] { new AgentSessionCount("Claude Code", 2), new AgentSessionCount("OpenCode", 1) }, counts);
     }
+
+    [Fact]
+    public void AgentSessionCounter_CountsCodexNativeAndNpmVendorBinaries()
+    {
+        var snapshot = new[]
+        {
+            Proc(10, "node", 1), Proc(11, "codex-x86_64-pc-windows-msvc", 10), // npm launcher → vendor binary
+            Proc(12, "codex", 1), Proc(13, "codex", 12),                       // native install with a nested codex
+        };
+
+        Assert.Equal(new[] { new AgentSessionCount("Codex", 2) }, AgentSessionCounter.Count(snapshot));
+    }
+
+    [Fact]
+    public void AgentSessionCounter_NoAgentsRunning_ReturnsEmpty() =>
+        Assert.Empty(AgentSessionCounter.Count(new[] { Proc(1, "bash", 0), Proc(2, "node", 1) }));
 
     [Fact]
     public void Trimmer_FirstPassTrimsNothing_SecondPassTrimsOnlyIdle()

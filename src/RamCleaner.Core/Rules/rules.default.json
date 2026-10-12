@@ -64,7 +64,7 @@
     { "name": "Overwolf", "description": "Overwolf" }
   ],
   "devAllowedProcesses": [
-    "claude", "node", "bun", "deno", "python*", "uv", "java", "javaw", "dotnet", "MSBuild", "VBCSCompiler",
+    "claude", "codex", "codex-*", "opencode", "opencode-*", "node", "bun", "deno", "python*", "uv", "java", "javaw", "dotnet", "MSBuild", "VBCSCompiler",
     "git", "git-remote-*", "ssh", "ssh-agent", "bash", "sh", "cmd", "powershell", "pwsh",
     "WindowsTerminal", "OpenConsole", "conhost",
     "wsl", "wslhost", "wslservice", "vmmem*", "vmwp", "Docker Desktop", "com.docker.*", "docker*",

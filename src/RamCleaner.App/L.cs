@@ -22,7 +22,7 @@ public static class L
     public static string TabSettings => T("Settings", "Ayarlar");
     public static string TotalRam => T("Total RAM", "Toplam RAM");
     public static string AvailableRam => T("Available", "Kullanılabilir");
-    public static string ClaudeSessions => T("Claude Code sessions", "Claude Code oturumu");
+    public static string AgentSessions => T("AI agent sessions", "AI ajan oturumu");
     public static string Reclaimed => T("Reclaimed", "Kazanılan");
     public static string ActivityLog => T("Activity", "Etkinlik");
     public static string PreviewTitle => T("Will be stopped", "Durdurulacaklar");

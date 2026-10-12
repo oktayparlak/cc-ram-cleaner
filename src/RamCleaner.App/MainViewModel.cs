@@ -76,7 +76,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _totalRam = "";
     [ObservableProperty] private string _availableRam = "";
     [ObservableProperty] private double _usedPercent;
-    [ObservableProperty] private int _claudeSessions;
+    [ObservableProperty] private string _agentSessions = "—";
     [ObservableProperty] private string _reclaimed = "0 MB";
     [ObservableProperty] private string _previewSummary = "";
     [ObservableProperty] private string _newPattern = "";
@@ -366,7 +366,9 @@ public sealed partial class MainViewModel : ObservableObject
             UsedPercent = memory.UsedPercent;
             Reclaimed = Mb(_guard.ReclaimedBytes);
             var snapshot = await Task.Run(() => _processes.Snapshot());
-            ClaudeSessions = ClaudeSessionCounter.Count(snapshot);
+            var agents = AgentSessionCounter.Count(snapshot);
+            // Only agents that are running are listed, one per line, e.g. "Claude Code  6".
+            AgentSessions = agents.Count == 0 ? "—" : string.Join(Environment.NewLine, agents.Select(a => $"{a.Agent}  {a.Sessions}"));
         }
         catch (Exception ex)
         {

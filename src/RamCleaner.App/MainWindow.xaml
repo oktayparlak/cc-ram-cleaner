@@ -76,8 +76,8 @@
                             <TextBlock Style="{StaticResource Metric}" Text="{Binding AvailableRam}" />
                         </StackPanel>
                         <StackPanel>
-                            <TextBlock Style="{StaticResource Caption}" Text="{x:Static app:L.ClaudeSessions}" />
-                            <TextBlock Style="{StaticResource Metric}" Text="{Binding ClaudeSessions}" />
+                            <TextBlock Style="{StaticResource Caption}" Text="{x:Static app:L.AgentSessions}" />
+                            <TextBlock Style="{StaticResource Metric}" FontSize="17" TextWrapping="Wrap" Text="{Binding AgentSessions}" />
                         </StackPanel>
                         <StackPanel>
                             <TextBlock Style="{StaticResource Caption}" Text="{x:Static app:L.Reclaimed}" />

@@ -11,7 +11,7 @@ public class DefaultRulesTests
     {
         Assert.Contains(_rules.BlockedServices, r => r.Name == "DiagTrack");
         Assert.Contains(_rules.BlockedProcesses, r => r.Name == "Spotify");
-        foreach (var dev in new[] { "claude", "node", "chrome", "com.docker.backend", "Docker Desktop", "vmmemWSL", "qemu-system-x86_64", "emulator", "adb", "studio64", "WindowsTerminal" })
+        foreach (var dev in new[] { "claude", "node", "chrome", "com.docker.backend", "Docker Desktop", "vmmemWSL", "qemu-system-x86_64", "emulator", "adb", "studio64", "WindowsTerminal", "codex", "codex-x86_64-pc-windows-msvc", "opencode" })
             Assert.True(NamePattern.MatchesAny(_rules.DevAllowedProcesses, dev), dev);
     }
 
