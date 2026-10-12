@@ -30,11 +30,11 @@ internal sealed class FakeProcessControl : IProcessControl
 
     public ProcessInfo? TryGet(int pid) => Processes.FirstOrDefault(p => p.Pid == pid);
 
-    public bool Kill(int pid)
+    public bool Kill(ProcessInfo target)
     {
-        if (FailKill.Contains(pid)) return false;
-        Killed.Add(pid);
-        Processes.RemoveAll(p => p.Pid == pid);
+        if (FailKill.Contains(target.Pid)) return false;
+        Killed.Add(target.Pid);
+        Processes.RemoveAll(p => p.Pid == target.Pid);
         return true;
     }
 

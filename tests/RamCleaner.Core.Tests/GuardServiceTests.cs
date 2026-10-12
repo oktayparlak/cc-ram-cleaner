@@ -185,6 +185,22 @@ public class GuardServiceTests
         Assert.True(lastConfig < firstStart, string.Join(" | ", _svc.Calls));
     }
 
+    // I2/I3: on logoff the restore must be fast — start types back, nothing started.
+    [Fact]
+    public void Deactivate_WithoutRestart_RestoresStartTypes_AndStartsNothing()
+    {
+        _svc.Add("DiagTrack", ServiceStartType.Automatic, running: true);
+        var guard = NewGuard();
+        guard.Activate(TestRules.Make(services: ["DiagTrack"]));
+
+        guard.Deactivate(restartServices: false);
+
+        Assert.Equal(ServiceStartType.Automatic, _svc.Query("DiagTrack")!.StartType);
+        Assert.DoesNotContain(_svc.Calls, c => c.StartsWith("start "));
+        Assert.False(_journal.Exists);
+        Assert.False(guard.IsActive);
+    }
+
     // I5: the UI reads IsActive; it must not wait for a long activation holding the guard lock.
     [Fact]
     public async Task IsActive_DoesNotBlockWhileActivationIsInProgress()

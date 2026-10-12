@@ -27,10 +27,28 @@ public class WindowsIntegrationTests
     [Fact]
     public void Kill_StopsAProcessWeStarted()
     {
-        using var ping = Process.Start(new ProcessStartInfo("ping", "-n 30 127.0.0.1") { CreateNoWindow = true, UseShellExecute = false })!;
-        Assert.True(_processes.Kill(ping.Id));
+        using var ping = StartPing();
+        Assert.True(_processes.Kill(_processes.TryGet(ping.Id)!));
         Assert.True(ping.WaitForExit(5000));
     }
+
+    // I1: a snapshot entry whose pid now belongs to a different (newer) process must not kill the newcomer.
+    [Fact]
+    public void Kill_LeavesProcessAlone_WhenItsIdentityDoesNotMatch()
+    {
+        using var ping = StartPing();
+        var info = _processes.TryGet(ping.Id)!;
+        Assert.NotEqual(0, info.CreationTime);
+
+        Assert.True(_processes.Kill(info with { CreationTime = info.CreationTime - 1 }));
+        Assert.False(ping.WaitForExit(500));
+
+        Assert.True(_processes.Kill(info));
+        Assert.True(ping.WaitForExit(5000));
+    }
+
+    private static Process StartPing() =>
+        Process.Start(new ProcessStartInfo("ping", "-n 30 127.0.0.1") { CreateNoWindow = true, UseShellExecute = false })!;
 
     [Fact]
     public void TrimWorkingSet_OnOwnProcess_Succeeds() => Assert.True(_processes.TrimWorkingSet(Environment.ProcessId));

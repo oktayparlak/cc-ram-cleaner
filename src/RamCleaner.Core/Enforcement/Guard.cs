@@ -288,7 +288,7 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
         var classifier = _classifier!;
         if (!classifier.ShouldKill(p, byPid) || _unkillable.Contains((p.Pid, p.Name)) || _spared.Contains((p.Pid, p.CreationTime))) return;
 
-        if (processes.Kill(p.Pid))
+        if (processes.Kill(p))
         {
             AddReclaimed(p.WorkingSetBytes);
             log.Write(LogKind.Killed, $"{p.Name} ({p.Pid}) stopped — {p.WorkingSetBytes / (1024 * 1024)} MB");

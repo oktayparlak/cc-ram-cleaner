@@ -4,6 +4,10 @@ namespace RamCleaner.Core.Native;
 
 internal static class Win32
 {
+    public const uint PROCESS_TERMINATE = 0x0001;
+    public const uint SYNCHRONIZE = 0x00100000;
+    public const int ERROR_INVALID_PARAMETER = 87;
+    public const uint WAIT_OBJECT_0 = 0;
     public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
     public const uint PROCESS_SET_QUOTA = 0x0100;
     public const uint TH32CS_SNAPPROCESS = 0x00000002;
@@ -43,6 +47,23 @@ internal static class Win32
 
     [DllImport("kernel32.dll")]
     public static extern IntPtr GetCurrentProcess();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+    public delegate bool EnumWindowsProc(IntPtr window, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr window);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetWindowTextLengthW(IntPtr window);
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();

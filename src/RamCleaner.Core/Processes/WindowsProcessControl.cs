@@ -12,12 +12,13 @@ public sealed class WindowsProcessControl : IProcessControl
     public IReadOnlyList<ProcessInfo> Snapshot()
     {
         var parents = ReadParentMap();
+        var windowOwners = ReadWindowOwners();
         var result = new List<ProcessInfo>();
         foreach (var process in Process.GetProcesses())
         {
             using (process)
             {
-                try { result.Add(Describe(process, parents)); }
+                try { result.Add(Describe(process, parents, windowOwners)); }
                 catch (InvalidOperationException) { /* exited during enumeration */ }
             }
         }
@@ -29,7 +30,7 @@ public sealed class WindowsProcessControl : IProcessControl
         try
         {
             using var process = Process.GetProcessById(pid);
-            return Describe(process, ReadParentMap());
+            return Describe(process, ReadParentMap(), ReadWindowOwners());
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
@@ -37,22 +38,20 @@ public sealed class WindowsProcessControl : IProcessControl
         }
     }
 
-    public bool Kill(int pid)
+    public bool Kill(ProcessInfo target)
     {
+        // One handle for both the identity check and the termination, so the pid cannot change in between.
+        var handle = Win32.OpenProcess(Win32.PROCESS_TERMINATE | Win32.PROCESS_QUERY_LIMITED_INFORMATION | Win32.SYNCHRONIZE, false, target.Pid);
+        if (handle == IntPtr.Zero)
+            return Marshal.GetLastWin32Error() == Win32.ERROR_INVALID_PARAMETER; // no such process: already gone
         try
         {
-            using var process = Process.GetProcessById(pid);
-            process.Kill(entireProcessTree: false);
-            return process.WaitForExit(3000);
+            if (!Win32.GetProcessTimes(handle, out var created, out _, out _, out _)) return false;
+            if (created != target.CreationTime) return true; // pid reused: the target is gone, leave the newcomer alone
+            if (!Win32.TerminateProcess(handle, 1)) return false;
+            return Win32.WaitForSingleObject(handle, 3000) == Win32.WAIT_OBJECT_0;
         }
-        catch (ArgumentException)
-        {
-            return true; // already gone
-        }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or NotSupportedException)
-        {
-            return false;
-        }
+        finally { Win32.CloseHandle(handle); }
     }
 
     public bool TrimWorkingSet(int pid)
@@ -63,27 +62,42 @@ public sealed class WindowsProcessControl : IProcessControl
         finally { Win32.CloseHandle(handle); }
     }
 
-    private static ProcessInfo Describe(Process process, IReadOnlyDictionary<int, int> parents)
+    private static ProcessInfo Describe(Process process, IReadOnlyDictionary<int, int> parents, IReadOnlySet<int> windowOwners)
     {
-        var (critical, cpu) = QueryHandleInfo(process.Id);
+        var (critical, cpu, created) = QueryHandleInfo(process.Id);
         return new ProcessInfo(process.Id, process.ProcessName, process.SessionId, process.WorkingSet64,
-            parents.GetValueOrDefault(process.Id), critical, cpu);
+            parents.GetValueOrDefault(process.Id), critical, cpu, created, windowOwners.Contains(process.Id));
     }
 
     /// <summary>Processes we cannot open (protected/PPL) are reported as critical so they are never touched.</summary>
-    private static (bool Critical, TimeSpan Cpu) QueryHandleInfo(int pid)
+    private static (bool Critical, TimeSpan Cpu, long CreationTime) QueryHandleInfo(int pid)
     {
         var handle = Win32.OpenProcess(Win32.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-        if (handle == IntPtr.Zero) return (true, TimeSpan.Zero);
+        if (handle == IntPtr.Zero) return (true, TimeSpan.Zero, 0);
         try
         {
             var critical = !Win32.IsProcessCritical(handle, out var isCritical) || isCritical;
-            var cpu = Win32.GetProcessTimes(handle, out _, out _, out var kernel, out var user)
-                ? TimeSpan.FromTicks(kernel + user)
-                : TimeSpan.Zero;
-            return (critical, cpu);
+            return Win32.GetProcessTimes(handle, out var created, out _, out var kernel, out var user)
+                ? (critical, TimeSpan.FromTicks(kernel + user), created)
+                : (critical, TimeSpan.Zero, 0);
         }
         finally { Win32.CloseHandle(handle); }
+    }
+
+    /// <summary>Pids owning a visible, titled top-level window.</summary>
+    private static HashSet<int> ReadWindowOwners()
+    {
+        var owners = new HashSet<int>();
+        Win32.EnumWindows((window, _) =>
+        {
+            if (Win32.IsWindowVisible(window) && Win32.GetWindowTextLengthW(window) > 0)
+            {
+                Win32.GetWindowThreadProcessId(window, out var pid);
+                owners.Add(pid);
+            }
+            return true;
+        }, IntPtr.Zero);
+        return owners;
     }
 
     private static Dictionary<int, int> ReadParentMap()
