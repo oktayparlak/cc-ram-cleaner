@@ -29,6 +29,17 @@ public partial class App : Application
         var log = new ActivityLog();
         var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "RamCleaner");
         var configPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RamCleaner", "config.json");
+        try
+        {
+            // The journal drives service changes made with admin rights: its folder must not be user-controlled.
+            SecureDirectory.Ensure(dataDir);
+        }
+        catch (Exception ex) when (ex is UnsafeDirectoryException or IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(L.UnsafeDataFolder(dataDir, ex.Message), "RamCleaner", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
         var processes = new WindowsProcessControl();
         var guard = new Guard(new WindowsServiceControl(), processes, new SessionJournal(Path.Combine(dataDir, "session.json")), log);
 
@@ -38,7 +49,8 @@ public partial class App : Application
             args.Handled = true;
         };
         AppDomain.CurrentDomain.UnhandledException += (_, _) => _vm?.Shutdown();
-        SessionEnding += (_, _) => _vm?.Shutdown();
+        // Not Shutdown(): the user may cancel the logoff, and the app must keep working afterwards.
+        SessionEnding += (_, _) => _vm?.OnSessionEnding();
 
         var recovered = guard.RecoverIfNeeded();
 

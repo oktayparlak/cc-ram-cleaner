@@ -95,13 +95,13 @@ public sealed partial class MainViewModel : ObservableObject
             if (_guard.IsActive)
             {
                 _runner.Stop();
-                await Task.Run(_guard.Deactivate);
+                await Task.Run(() => _guard.Deactivate());
             }
             else
             {
                 var rules = BuildRules();
                 await Task.Run(() => _guard.Activate(rules));
-                _runner.Start();
+                if (_guard.IsActive) _runner.Start(); // a racing deactivate must not leave the runner going
             }
         }
         catch (Exception ex)
@@ -234,6 +234,18 @@ public sealed partial class MainViewModel : ObservableObject
         if (!_config.AllowedProcesses.Contains(name, StringComparer.OrdinalIgnoreCase)) _config.AllowedProcesses.Add(name);
         SyncUserLists();
         SaveAndApply();
+    }
+
+    /// <summary>
+    /// Logoff/shutdown: put start types back quickly without restarting services (Automatic ones start at next boot).
+    /// Unlike <see cref="Shutdown"/> the view-model stays usable, because the user may cancel the logoff.
+    /// </summary>
+    public void OnSessionEnding()
+    {
+        _runner.Stop();
+        try { _guard.Deactivate(restartServices: false); }
+        catch (Exception ex) { _log.Write(LogKind.Warning, ex.Message); }
+        IsActive = _guard.IsActive;
     }
 
     /// <summary>Stops the guard and restores services. Safe to call more than once.</summary>

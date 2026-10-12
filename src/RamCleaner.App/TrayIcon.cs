@@ -14,7 +14,11 @@ public sealed class TrayIcon : IDisposable
         _window = window;
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add(L.Open, null, (_, _) => ShowWindow());
-        menu.Items.Add(L.ToggleMenu, null, (_, _) => vm.ToggleCommand.Execute(null));
+        menu.Items.Add(L.ToggleMenu, null, (_, _) =>
+        {
+            // AsyncRelayCommand.Execute ignores CanExecute; never start a second toggle while one is running.
+            if (vm.ToggleCommand.CanExecute(null)) vm.ToggleCommand.Execute(null);
+        });
         menu.Items.Add(L.PurgeStandby, null, (_, _) => vm.PurgeStandbyCommand.Execute(null));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add(L.Exit, null, (_, _) => exit());

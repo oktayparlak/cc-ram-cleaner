@@ -61,5 +61,8 @@ public static class L
     public static string EstimatedGain(string mb) => T($"Estimated gain: {mb}", $"Tahmini kazanç: {mb}");
     public static string BlockedToast(string name) => T($"{name} was blocked. Click to always allow it.", $"{name} engellendi. Her zaman izin vermek için tıkla.");
     public static string RecoveredToast(int count) => T($"Restored {count} service(s) left disabled by a previous session.", $"Önceki oturumdan kalan {count} servis geri yüklendi.");
+    public static string UnsafeDataFolder(string path, string reason) => T(
+        $"RamCleaner cannot use its data folder safely and will close.\n\n{reason}\n\nDelete \"{path}\" (as administrator) and start RamCleaner again.",
+        $"RamCleaner veri klasörünü güvenle kullanamıyor ve kapanacak.\n\n{reason}\n\n\"{path}\" klasörünü (yönetici olarak) silip RamCleaner'ı yeniden başlat.");
     public static string UnsafePattern(string pattern) => T($"'{pattern}' is too broad to block", $"'{pattern}' engellemek için fazla geniş");
 }
