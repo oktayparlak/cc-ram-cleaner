@@ -9,18 +9,18 @@ Kullanıcı kararları: **Hibrit profiller** (Dengeli = kara liste, Agresif = be
 
 ## Teknoloji
 - **C# / WPF, .NET 10 LTS** (kullanıcı .NET 8 seçti; .NET 8 desteği 10 Kasım 2026'da bittiği için Kasım 2028'e kadar destekli .NET 10 kullanılır, API'ler aynı).
-- Bağımlılıklar: `H.NotifyIcon.Wpf` (tray), `System.Management` (WMI), `System.ServiceProcess.ServiceController`, xUnit. Geri kalan Win32 çağrıları P/Invoke (`LibraryImport`).
+- Bağımlılıklar: `CommunityToolkit.Mvvm` (MVVM), `System.Management` (WMI), `System.ServiceProcess.ServiceController`, xUnit. Tray ikonu için ek paket yerine yerleşik WinForms `NotifyIcon` kullanılır (daha az bağımlılık). Geri kalan Win32 çağrıları P/Invoke.
 - Dağıtım: framework-dependent single-file `RamCleaner.exe` + self-contained varyant (GitHub Releases).
-- UI dili: İngilizce varsayılan + Türkçe (`.resx`, işletim sistemi diline göre seçilir).
+- UI dili: İngilizce varsayılan + Türkçe; işletim sistemi diline göre seçilir. `.resx` yerine basit bir statik `L` sınıfı (dotnet CLI `.resx` tasarımcı kodunu üretmediği için).
 
 ## Mimari
 ```
-RamCleaner.sln
+RamCleaner.slnx   (.NET 10'un varsayılan çözüm biçimi)
 src/RamCleaner.Core/        (net10.0-windows, UI yok, test edilebilir)
   Rules/        RuleSet (JSON), varsayılan kurallar (gömülü rules.default.json), kullanıcı override birleştirme
   Classification/ProcessClassifier   -> Protected | DevAllowed | UserAllowed | Blocked | Unknown
   Services/     IServiceControl + WindowsServiceControl (ServiceController + ChangeServiceConfig P/Invoke)
-  Processes/    IProcessControl + WindowsProcessControl (Kill(entireProcessTree), oturum id, yol, IsProcessCritical)
+  Processes/    IProcessControl + WindowsProcessControl (tek süreç Kill, oturum id, üst süreç, IsProcessCritical, CPU süresi)
   Enforcement/  Guard (aktif/pasif durum makinesi), ProcessWatcher (WMI Win32_ProcessStartTrace + 2 sn poll yedeği),
                 ServiceWatcher (5 sn'de bir engelli servis çalışıyor mu kontrolü)
   Memory/       MemoryMonitor (GlobalMemoryStatusEx, claude süreç sayısı), WorkingSetTrimmer (EmptyWorkingSet),
@@ -37,7 +37,7 @@ README.md (EN + TR), LICENSE (MIT)
 
 **Aktifleştirme (büyük toggle buton):**
 1. Önce journal'a niyet yazılır (servis adı, orijinal StartType, orijinal durum) → sonra servis `Disabled` yapılıp durdurulur. Çökme durumunda geri alınabilir.
-2. Profildeki engelli süreçler öldürülür (süreç ağacıyla).
+2. Profildeki engelli süreçler öldürülür — yalnızca sürecin kendisi, ağaç değil: engelli/tanınmayan bir uygulamanın başlattığı bir dev aracı (terminal, claude, node) yanlışlıkla ölmesin. Engelli uygulamanın alt süreçleri kendi adlarıyla ayrıca sınıflandırılır.
 3. Watcher'lar başlar: engelli süreç başlarsa ~1 sn içinde öldürülür; engelli servis bir şekilde çalışırsa tekrar durdurulur. Tray bildirimi: "Spotify engellendi — [İzin ver]".
 
 **Deaktifleştirme / uygulamadan çıkış / Windows oturum kapanışı (`SessionEnding`):** journal'daki servislerin StartType ve çalışma durumu geri yüklenir, watcher'lar durur, journal silinir. Öldürülen uygulamalar yeniden açılmaz.
@@ -55,7 +55,7 @@ README.md (EN + TR), LICENSE (MIT)
 **Ekstralar:**
 - *Working set trim:* Aktifken her 60 sn'de (ayarlanabilir) son aralıkta CPU kullanmayan, ön planda olmayan süreçlere `EmptyWorkingSet`.
 - *Standby temizleme:* Manuel buton + opsiyonel otomatik (boş RAM < %10 ise, en fazla 5 dk'da bir).
-- *Canlı panel:* toplam/boş RAM grafiği, açık Claude Code oturumu sayısı, aktivasyondan beri kazanılan MB, son işlemler logu.
+- *Canlı panel:* toplam/kullanılabilir RAM ve doluluk göstergesi, açık Claude Code oturumu sayısı, aktivasyondan beri kazanılan MB, son işlemler logu.
 
 ## UI (WPF, tek pencere + tray)
 - Üstte büyük **AKTİF / PASİF** toggle, yanında profil seçici (Dengeli / Agresif).
@@ -69,7 +69,7 @@ README.md (EN + TR), LICENSE (MIT)
 - **Agresif + yeni uygulama:** Aktifken açılan sınıflandırılmamış uygulama da öldürülür; bildirimdeki "İzin ver" onu kullanıcı izin listesine ekler.
 - **Servis geri yükleme:** Orijinal StartType geri yazılır; servis aktivasyondan önce çalışıyorsa yeniden başlatılır, duruyorsa durur halde bırakılır.
 - **Working set trim kapsamı:** Erişilebilen tüm süreçler; hariç: ön plan penceresinin süreci, aracın kendisi, `vmmem*` (VM belleği), Protected listesi.
-- **"Kazanılan MB":** Öldürülen süreçlerin öldürülme anındaki working set toplamı + kendi süreci olan durdurulan servislerin working set'i + trim/standby ile serbest kalan miktar (işlem öncesi/sonrası boş RAM farkı).
+- **"Kazanılan MB":** Öldürülen süreçlerin öldürülme anındaki working set toplamı + kendi süreci olan (svchost dışı) durdurulan servislerin working set'i + trim ile küçülen working set miktarı. Standby temizliği sayılmaz: standby bellek zaten "kullanılabilir" sayıldığı için kazanç olarak göstermek yanıltıcı olur.
 - **Windows ile başla:** `requireAdministrator` yüzünden Run anahtarı her açılışta UAC sorar; bunun yerine "en yüksek yetkiyle çalıştır" işaretli bir Task Scheduler görevi oluşturulur.
 
 ## Hata yönetimi
