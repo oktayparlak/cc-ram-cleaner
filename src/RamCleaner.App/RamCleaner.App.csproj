@@ -9,6 +9,8 @@
     <Version>0.1.0</Version>
     <!-- MVVM toolkit source generators can emit advisory warnings; keep the UI shell lenient. -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- WFO0003 targets WinForms apps; this is a WPF app (WinForms only for NotifyIcon) and WPF reads DPI awareness from the manifest. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <!-- WPF + WinForms (tray icon) together: avoid ambiguous Application/MessageBox/etc. -->
