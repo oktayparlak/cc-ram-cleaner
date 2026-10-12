@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CCRamCleaner.App/CCRamCleaner.App.csproj" />
+    <Project Path="src/CCRamCleaner.Core/CCRamCleaner.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CCRamCleaner.Core.Tests/CCRamCleaner.Core.Tests.csproj" />
+  </Folder>
+</Solution>
