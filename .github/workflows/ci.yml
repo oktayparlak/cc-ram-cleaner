@@ -30,6 +30,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v')
         with:
+          generate_release_notes: true
           files: |
             CCRamCleaner-win-x64.exe
             CCRamCleaner-win-x64-selfcontained.exe
