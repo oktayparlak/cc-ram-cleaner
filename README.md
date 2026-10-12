@@ -13,6 +13,8 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/oktayparlak/cc-ram-cleaner/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/oktayparlak/cc-ram-cleaner/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/oktayparlak/cc-ram-cleaner/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/oktayparlak/cc-ram-cleaner?style=social"></a>
   <img alt="Platform: Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?logo=windows">
   <img alt=".NET 10" src="https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green">
@@ -157,9 +159,11 @@ Purging the standby cache is deliberately *not* counted, because Windows already
 
 ## Build from source
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) on Windows. Clone the repository, then from its root:
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) on Windows.
 
 ```bash
+git clone https://github.com/oktayparlak/cc-ram-cleaner.git
+cd cc-ram-cleaner
 dotnet test CCRamCleaner.slnx
 dotnet publish src/CCRamCleaner.App -c Release -r win-x64 -p:PublishSingleFile=true --self-contained false -o publish
 ```
