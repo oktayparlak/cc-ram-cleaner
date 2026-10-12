@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RamCleaner.Core/RamCleaner.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RamCleaner.Core.Tests/RamCleaner.Core.Tests.csproj" />
+  </Folder>
+</Solution>
