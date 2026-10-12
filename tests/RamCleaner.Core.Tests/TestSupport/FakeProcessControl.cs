@@ -12,9 +12,10 @@ internal sealed class FakeProcessControl : IProcessControl
     public List<int> Trimmed { get; } = [];
     public int CurrentProcessId { get; set; } = 1;
 
-    public ProcessInfo Add(int pid, string name, int session = 1, long mb = 100, int parent = 0, bool critical = false, double cpuSeconds = 0)
+    public ProcessInfo Add(int pid, string name, int session = 1, long mb = 100, int parent = 0, bool critical = false,
+        double cpuSeconds = 0, long created = 0, bool window = false)
     {
-        var p = new ProcessInfo(pid, name, session, mb * MB, parent, critical, TimeSpan.FromSeconds(cpuSeconds));
+        var p = new ProcessInfo(pid, name, session, mb * MB, parent, critical, TimeSpan.FromSeconds(cpuSeconds), created, window);
         Processes.Add(p);
         return p;
     }

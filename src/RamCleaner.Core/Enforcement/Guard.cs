@@ -1,3 +1,4 @@
+using RamCleaner.Core.Config;
 using RamCleaner.Core.Classification;
 using RamCleaner.Core.Processes;
 using RamCleaner.Core.Rules;
@@ -25,15 +26,15 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
     private readonly object _gate = new();
     private readonly HashSet<(int Pid, string Name)> _unkillable = [];
     private readonly HashSet<string> _warnedServices = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<(int Pid, long CreationTime)> _spared = [];
     private ProcessClassifier? _classifier;
+    private volatile bool _active;
     private long _reclaimed;
 
     public event Action<BlockedProcessEvent>? ProcessBlocked;
 
-    public bool IsActive
-    {
-        get { lock (_gate) return _classifier != null; }
-    }
+    /// <summary>Lock-free so the UI never waits for a long activation or restore.</summary>
+    public bool IsActive => _active;
 
     public long ReclaimedBytes => Interlocked.Read(ref _reclaimed);
 
@@ -43,7 +44,11 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
     {
         var snapshot = processes.Snapshot();
         var classifier = CreateClassifier(rules, snapshot);
-        var targets = snapshot.Where(classifier.ShouldKill).OrderByDescending(p => p.WorkingSetBytes).ToList();
+        var byPid = ProcessTree.ByPid(snapshot);
+        var targets = snapshot
+            .Where(p => classifier.ShouldKill(p, byPid) && !KeepsOpenWork(p, classifier))
+            .OrderByDescending(p => p.WorkingSetBytes)
+            .ToList();
         var targetServices = rules.BlockedServices
             .Select(TryQuery)
             .OfType<ServiceState>()
@@ -59,6 +64,7 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
             if (_classifier != null) return;
             Interlocked.Exchange(ref _reclaimed, 0);
             _unkillable.Clear();
+            _spared.Clear();
             _warnedServices.Clear();
             try
             {
@@ -69,8 +75,11 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
                 RestoreServices(_ => true);
                 throw;
             }
-            _classifier = CreateClassifier(rules, processes.Snapshot());
+            var snapshot = processes.Snapshot();
+            _classifier = CreateClassifier(rules, snapshot);
+            _active = true;
             log.Write(LogKind.Info, $"Guard activated ({rules.Profile})");
+            SpareOpenWindows(snapshot);
             SweepProcesses(notify: false);
         }
     }
@@ -80,7 +89,9 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
         lock (_gate)
         {
             if (_classifier == null) return;
-            _classifier = CreateClassifier(rules, processes.Snapshot());
+            var snapshot = processes.Snapshot();
+            _classifier = CreateClassifier(rules, snapshot);
+            SpareOpenWindows(snapshot);
             var blocked = new HashSet<string>(rules.BlockedServices, StringComparer.OrdinalIgnoreCase);
             RestoreServices(e => !blocked.Contains(e.Name));
             try
@@ -95,13 +106,17 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
         }
     }
 
-    public void Deactivate()
+    /// <param name="restartServices">
+    /// False on logoff/shutdown: start types are put back (fast) but nothing is started; Automatic services start at next boot.
+    /// </param>
+    public void Deactivate(bool restartServices = true)
     {
         lock (_gate)
         {
             if (_classifier == null && !journal.Exists) return;
             _classifier = null;
-            RestoreServices(_ => true);
+            _active = false;
+            RestoreServices(_ => true, restartServices);
             log.Write(LogKind.Info, "Guard deactivated");
         }
     }
@@ -131,8 +146,12 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
     {
         lock (_gate)
         {
-            if (_classifier == null) return;
-            if (processes.TryGet(pid) is { } p) TryKill(p, notify: true);
+            if (_classifier == null || processes.TryGet(pid) is not { } p) return;
+            // Only an Unknown process in Aggressive needs its ancestry (dev-tool children are spared); skip the full snapshot otherwise.
+            var byPid = _classifier.Rules.Profile == GuardProfile.Aggressive && _classifier.Classify(p) == Verdict.Unknown
+                ? ProcessTree.ByPid(processes.Snapshot())
+                : null;
+            TryKill(p, byPid, notify: true);
         }
     }
 
@@ -195,9 +214,14 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
         }
     }
 
-    private void RestoreServices(Func<ServiceJournalEntry, bool> shouldRestore)
+    /// <summary>
+    /// Pass 1 writes every original start type back and shrinks the journal — fast, and enough to leave the
+    /// system correct if we are killed mid-way (logoff, forced shutdown). Pass 2 restarts what was running.
+    /// </summary>
+    private void RestoreServices(Func<ServiceJournalEntry, bool> shouldRestore, bool restartServices = true)
     {
         var keep = new List<ServiceJournalEntry>();
+        var restored = new List<ServiceJournalEntry>();
         foreach (var entry in journal.Load())
         {
             if (!shouldRestore(entry))
@@ -209,11 +233,7 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
             {
                 if (services.Query(entry.Name) is null) continue; // uninstalled meanwhile
                 services.SetStartType(entry.Name, entry.OriginalStartType, entry.OriginalDelayedAutoStart);
-                if (entry.WasRunning && entry.OriginalStartType != ServiceStartType.Disabled
-                    && services.Query(entry.Name) is { IsRunning: false })
-                {
-                    services.Start(entry.Name);
-                }
+                restored.Add(entry);
                 log.Write(LogKind.Restored, $"Service {entry.Name} restored ({entry.OriginalStartType})");
             }
             catch (Exception ex)
@@ -223,17 +243,50 @@ public sealed class Guard(IServiceControl services, IProcessControl processes, S
             }
         }
         journal.Replace(keep);
+
+        if (!restartServices) return;
+        foreach (var entry in restored.Where(e => e.WasRunning && e.OriginalStartType != ServiceStartType.Disabled))
+        {
+            try
+            {
+                if (services.Query(entry.Name) is { IsRunning: false }) services.Start(entry.Name);
+            }
+            catch (Exception ex)
+            {
+                log.Write(LogKind.Warning, $"Could not restart service {entry.Name}: {ex.Message}");
+            }
+        }
     }
 
     private void SweepProcesses(bool notify)
     {
-        foreach (var p in processes.Snapshot()) TryKill(p, notify);
+        var snapshot = processes.Snapshot();
+        var byPid = ProcessTree.ByPid(snapshot);
+        foreach (var p in snapshot) TryKill(p, byPid, notify);
     }
 
-    private void TryKill(ProcessInfo p, bool notify)
+    /// <summary>
+    /// Unknown apps that already have an open window when the guard (re)evaluates may hold unsaved work:
+    /// they are left running for this session instead of being force-killed. New launches are still blocked.
+    /// </summary>
+    private void SpareOpenWindows(IReadOnlyList<ProcessInfo> snapshot)
     {
         var classifier = _classifier!;
-        if (!classifier.ShouldKill(p) || _unkillable.Contains((p.Pid, p.Name))) return;
+        var byPid = ProcessTree.ByPid(snapshot);
+        foreach (var p in snapshot)
+        {
+            if (!KeepsOpenWork(p, classifier) || !classifier.ShouldKill(p, byPid) || !_spared.Add((p.Pid, p.CreationTime))) continue;
+            log.Write(LogKind.Info, $"{p.Name} ({p.Pid}) left running — it has an open window");
+        }
+    }
+
+    private static bool KeepsOpenWork(ProcessInfo p, ProcessClassifier classifier) =>
+        p.HasWindow && classifier.Classify(p) == Verdict.Unknown;
+
+    private void TryKill(ProcessInfo p, IReadOnlyDictionary<int, ProcessInfo>? byPid, bool notify)
+    {
+        var classifier = _classifier!;
+        if (!classifier.ShouldKill(p, byPid) || _unkillable.Contains((p.Pid, p.Name)) || _spared.Contains((p.Pid, p.CreationTime))) return;
 
         if (processes.Kill(p.Pid))
         {

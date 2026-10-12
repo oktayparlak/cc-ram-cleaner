@@ -21,10 +21,17 @@ public sealed class ProcessClassifier(EffectiveRules rules, IReadOnlySet<int> sh
         return Verdict.Unknown;
     }
 
-    public bool ShouldKill(ProcessInfo p) => Classify(p) switch
+    public bool ShouldKill(ProcessInfo p) => ShouldKill(p, null);
+
+    /// <param name="byPid">Live process map; when given, Unknown processes descending from an allowed process are spared.</param>
+    public bool ShouldKill(ProcessInfo p, IReadOnlyDictionary<int, ProcessInfo>? byPid) => Classify(p) switch
     {
         Verdict.UserBlocked or Verdict.DefaultBlocked => true,
-        Verdict.Unknown => rules.Profile == GuardProfile.Aggressive && p.SessionId != 0,
+        Verdict.Unknown => rules.Profile == GuardProfile.Aggressive && p.SessionId != 0 && !HasAllowedAncestor(p, byPid),
         _ => false,
     };
+
+    /// <summary>Helpers spawned by dev tools (git-credential-manager, esbuild, testhost, rg…) inherit their allowance.</summary>
+    public bool HasAllowedAncestor(ProcessInfo p, IReadOnlyDictionary<int, ProcessInfo>? byPid) =>
+        byPid is not null && ProcessTree.Ancestors(byPid, p).Any(a => Classify(a) is Verdict.DevAllowed or Verdict.UserAllowed);
 }

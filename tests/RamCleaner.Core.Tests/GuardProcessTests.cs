@@ -136,4 +136,91 @@ public class GuardProcessTests
         Assert.Empty(_svc.Calls);
         Assert.False(_guard.IsActive);
     }
+
+    // C1: helpers spawned by dev tools (git-credential-manager, esbuild, testhost, rg…) must survive Aggressive.
+    [Fact]
+    public void Aggressive_SparesUnknownDescendantsOfDevTools_ButNotOtherUnknowns()
+    {
+        _proc.Add(200, "explorer", parent: 0);
+        _proc.Add(100, "node", parent: 200);
+        _proc.Add(101, "esbuild", parent: 100);
+        _proc.Add(102, "git", parent: 200);
+        _proc.Add(103, "git-credential-manager", parent: 102);
+        _proc.Add(104, "helper-of-helper", parent: 103);
+        _proc.Add(105, "notepad", parent: 200);
+
+        _guard.Activate(TestRules.Make(GuardProfile.Aggressive, dev: ["node", "git"]));
+
+        Assert.Equal(new[] { 105 }, _proc.Killed);
+    }
+
+    [Fact]
+    public void Aggressive_SparesDevToolChildStartedAfterActivation()
+    {
+        _proc.Add(100, "node");
+        _guard.Activate(TestRules.Make(GuardProfile.Aggressive));
+
+        _proc.Add(110, "testhost", parent: 100);
+        _guard.OnProcessStarted(110);
+
+        Assert.Empty(_proc.Killed);
+    }
+
+    [Fact]
+    public void Aggressive_ReusedParentPid_DoesNotShieldOlderProcess()
+    {
+        // pid 300 now belongs to a node started *after* the orphan, so it cannot be the orphan's real parent
+        _proc.Add(300, "node", created: 50);
+        _proc.Add(301, "orphan", parent: 300, created: 10);
+
+        _guard.Activate(TestRules.Make(GuardProfile.Aggressive));
+
+        Assert.Equal(new[] { 301 }, _proc.Killed);
+    }
+
+    // I7: an unknown app with an open window at activation may hold unsaved work.
+    [Fact]
+    public void Aggressive_LeavesAppsWithOpenWindowsRunning_AtActivation()
+    {
+        _proc.Add(400, "WINWORD", window: true);
+        _proc.Add(401, "bgjunk");
+
+        _guard.Activate(TestRules.Make(GuardProfile.Aggressive));
+        _guard.EnforceProcesses();
+
+        Assert.Equal(new[] { 401 }, _proc.Killed);
+        Assert.Contains(_log.Snapshot(), e => e.Message.Contains("WINWORD"));
+    }
+
+    [Fact]
+    public void Aggressive_StillBlocksWindowedAppLaunchedAfterActivation()
+    {
+        _guard.Activate(TestRules.Make(GuardProfile.Aggressive));
+
+        _proc.Add(402, "notepad", window: true);
+        _guard.OnProcessStarted(402);
+
+        Assert.Equal(new[] { 402 }, _proc.Killed);
+    }
+
+    [Fact]
+    public void ExplicitlyBlockedApp_IsKilledEvenWithOpenWindow()
+    {
+        _proc.Add(403, "Spotify", window: true);
+        _guard.Activate(TestRules.Make(GuardProfile.Aggressive));
+        Assert.Equal(new[] { 403 }, _proc.Killed);
+    }
+
+    [Fact]
+    public void Preview_InAggressive_ExcludesSparedProcesses()
+    {
+        _proc.Add(100, "node");
+        _proc.Add(101, "esbuild", parent: 100);
+        _proc.Add(404, "WINWORD", window: true);
+        _proc.Add(405, "bgjunk");
+
+        var preview = _guard.Preview(TestRules.Make(GuardProfile.Aggressive));
+
+        Assert.Equal(new[] { 405 }, preview.Processes.Select(p => p.Pid));
+    }
 }

@@ -19,9 +19,13 @@ internal sealed class FakeServiceControl : IServiceControl
         Services[name] = Services[name] with { StartType = startType, DelayedAutoStart = delayedAutoStart };
     }
 
+    /// <summary>Runs inside Stop before the state changes — lets a test hold the guard mid-activation.</summary>
+    public Action<string>? OnStop { get; set; }
+
     public void Stop(string name)
     {
         Calls.Add($"stop {name}");
+        OnStop?.Invoke(name);
         if (FailStop.Contains(name)) throw new InvalidOperationException("dependent services are running");
         Services[name] = Services[name] with { IsRunning = false };
     }

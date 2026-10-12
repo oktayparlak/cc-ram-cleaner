@@ -167,4 +167,43 @@ public class GuardServiceTests
 
         Assert.False(_journal.Exists);
     }
+
+    // I3: an interrupted restore (logoff, forced shutdown) must not leave start types disabled.
+    [Fact]
+    public void Deactivate_RestoresEveryStartTypeBeforeStartingAnyService()
+    {
+        _svc.Add("DiagTrack", ServiceStartType.Automatic, running: true);
+        _svc.Add("WSearch", ServiceStartType.Automatic, running: true);
+        var guard = NewGuard();
+        guard.Activate(TestRules.Make(services: ["DiagTrack", "WSearch"]));
+        _svc.Calls.Clear();
+
+        guard.Deactivate();
+
+        var lastConfig = _svc.Calls.FindLastIndex(c => c.StartsWith("config "));
+        var firstStart = _svc.Calls.FindIndex(c => c.StartsWith("start "));
+        Assert.True(lastConfig < firstStart, string.Join(" | ", _svc.Calls));
+    }
+
+    // I5: the UI reads IsActive; it must not wait for a long activation holding the guard lock.
+    [Fact]
+    public async Task IsActive_DoesNotBlockWhileActivationIsInProgress()
+    {
+        using var stopEntered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        _svc.Add("DiagTrack", ServiceStartType.Automatic, running: true);
+        _svc.OnStop = _ => { stopEntered.Set(); release.Wait(); };
+        var guard = NewGuard();
+
+        var activation = Task.Run(() => guard.Activate(TestRules.Make(services: ["DiagTrack"])));
+        Assert.True(stopEntered.Wait(5000));
+        var read = Task.Run(() => guard.IsActive);
+        var finishedFirst = await Task.WhenAny(read, Task.Delay(1000));
+        release.Set();
+        await activation;
+
+        Assert.Same(read, finishedFirst);
+        Assert.False(await read);
+        Assert.True(guard.IsActive);
+    }
 }
